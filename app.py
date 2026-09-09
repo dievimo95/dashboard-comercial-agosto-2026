@@ -8,6 +8,7 @@ import streamlit as st
 st.set_page_config(page_title="Dashboard Comercial Agosto 2026", page_icon="📊", layout="wide")
 
 DATA = Path(__file__).parent / "resumen_sku.csv"
+ORDERS_DATA = Path(__file__).parent / "ordenes_pendientes.csv"
 df = pd.read_csv(DATA, encoding="utf-8-sig")
 
 st.title("Dashboard Comercial Agosto 2026")
@@ -42,6 +43,10 @@ st.markdown(
     div[data-testid="stMetricValue"] {
         font-size: clamp(1.65rem, 2.6vw, 2.35rem);
     }
+    div[data-testid="stButton"] button {
+        border-radius: 10px;
+        font-weight: 650;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -56,11 +61,62 @@ r2c1, r2c2, r2c3 = st.columns(3)
 r2c1.metric("Cumplimiento de OC", f"{facturado/oc:.1%}" if oc else "—")
 r2c2.metric("Pendiente (unidades)", f"{pendiente_unidades:,.0f}")
 r2c3.metric("Venta pendiente (USD)", f"${pendiente_usd:,.0f}")
+if r2c3.button("🔎 Ver órdenes pendientes", use_container_width=True):
+    st.session_state["mostrar_ordenes"] = not st.session_state.get("mostrar_ordenes", False)
 
 st.info(
     "La venta pendiente se calcula por SKU como max(OC − facturado, 0) × precio promedio de OC. "
     "Los sobrecumplimientos de otros SKU no reducen esta oportunidad pendiente."
 )
+
+if st.session_state.get("mostrar_ordenes", False):
+    st.subheader("Órdenes de compra con facturación pendiente")
+    st.caption(
+        "La facturación disponible está consolidada por SKU y no contiene el número de OC. "
+        "Por eso, el saldo se distribuye proporcionalmente entre las órdenes que incluyen cada producto."
+    )
+    orders = pd.read_csv(ORDERS_DATA, encoding="utf-8-sig")
+    resumen_oc = orders.groupby(["Cliente", "Orden"], as_index=False).agg(
+        Productos=("Codigo", "nunique"),
+        Unidades_OC=("OC_Unidades_documento", "sum"),
+        Pendiente_estimado_unidades=("Pendiente_estimado_unidades", "sum"),
+        Pendiente_estimado_USD=("Pendiente_estimado_USD", "sum"),
+    ).sort_values("Pendiente_estimado_USD", ascending=False)
+
+    clientes_oc = ["Todos"] + sorted(resumen_oc["Cliente"].dropna().unique().tolist())
+    cliente_oc = st.selectbox("Filtrar cliente", clientes_oc, key="cliente_oc")
+    if cliente_oc != "Todos":
+        resumen_oc = resumen_oc[resumen_oc["Cliente"] == cliente_oc]
+
+    st.dataframe(
+        resumen_oc,
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "Cliente": "Cliente",
+            "Orden": "Número de orden",
+            "Productos": st.column_config.NumberColumn("Productos", format="%d"),
+            "Unidades_OC": st.column_config.NumberColumn("Unidades en OC", format="%,.0f"),
+            "Pendiente_estimado_unidades": st.column_config.NumberColumn("Pendiente estimado", format="%,.0f"),
+            "Pendiente_estimado_USD": st.column_config.NumberColumn("Venta pendiente estimada", format="$%,.2f"),
+        },
+    )
+
+    with st.expander("Ver productos dentro de las órdenes"):
+        st.dataframe(
+            orders.sort_values("Pendiente_estimado_USD", ascending=False),
+            hide_index=True,
+            use_container_width=True,
+            column_order=["Cliente", "Orden", "Producto", "OC_Unidades_documento",
+                          "Pendiente_estimado_unidades", "Precio_OC", "Pendiente_estimado_USD"],
+            column_config={
+                "Orden": "Número de orden",
+                "OC_Unidades_documento": st.column_config.NumberColumn("Unidades en OC", format="%,.0f"),
+                "Pendiente_estimado_unidades": st.column_config.NumberColumn("Pendiente estimado", format="%,.0f"),
+                "Precio_OC": st.column_config.NumberColumn("Precio", format="$%.2f"),
+                "Pendiente_estimado_USD": st.column_config.NumberColumn("Pendiente USD", format="$%,.2f"),
+            },
+        )
 
 left, right = st.columns((3, 2))
 with left:
