@@ -98,6 +98,8 @@ if st.session_state.get("mostrar_ordenes", False):
         resumen_oc,
         hide_index=True,
         use_container_width=True,
+        column_order=["Cliente", "Orden", "Producto_principal", "Productos",
+                      "Pendiente_estimado_unidades", "Pendiente_estimado_USD"],
         column_config={
             "Cliente": "Cliente",
             "Orden": "Número de orden",
