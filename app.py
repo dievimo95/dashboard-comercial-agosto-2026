@@ -94,6 +94,24 @@ if st.session_state.get("mostrar_ordenes", False):
     if cliente_oc != "Todos":
         resumen_oc = resumen_oc[resumen_oc["Cliente"] == cliente_oc]
 
+    resumen_oc["Clave_OC"] = resumen_oc["Cliente"].astype(str) + " | " + resumen_oc["Orden"].astype(str)
+    opciones_oc = resumen_oc["Clave_OC"].tolist()
+    seleccion_oc = st.multiselect(
+        "Órdenes incluidas en la suma",
+        opciones_oc,
+        default=opciones_oc,
+        key=f"ordenes_incluidas_{cliente_oc}",
+        help="Desmarca una orden para excluirla de los totales y de la tabla.",
+    )
+    resumen_oc = resumen_oc[resumen_oc["Clave_OC"].isin(seleccion_oc)].drop(columns="Clave_OC")
+    ordenes_elegidas = set(resumen_oc["Orden"].astype(str))
+    orders_filtradas = orders[orders["Orden"].astype(str).isin(ordenes_elegidas)]
+
+    suma1, suma2, suma3 = st.columns(3)
+    suma1.metric("Órdenes seleccionadas", f"{len(resumen_oc):,}")
+    suma2.metric("Unidades seleccionadas", f"{resumen_oc['Pendiente_estimado_unidades'].sum():,.0f}")
+    suma3.metric("Venta seleccionada", f"${resumen_oc['Pendiente_estimado_USD'].sum():,.2f}")
+
     st.dataframe(
         resumen_oc,
         hide_index=True,
@@ -113,7 +131,7 @@ if st.session_state.get("mostrar_ordenes", False):
 
     with st.expander("Ver productos dentro de las órdenes"):
         st.dataframe(
-            orders.sort_values("Pendiente_estimado_USD", ascending=False),
+            orders_filtradas.sort_values("Pendiente_estimado_USD", ascending=False),
             hide_index=True,
             use_container_width=True,
             column_order=["Cliente", "Orden", "Producto", "OC_Unidades_documento",
