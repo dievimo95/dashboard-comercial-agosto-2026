@@ -26,12 +26,21 @@ if producto:
 forecast = df["Forecast_Unidades"].sum()
 oc = df["OC_Unidades"].sum()
 facturado = df["Facturado_Unidades"].sum()
+pendiente_unidades = df["Pendiente_Unidades_OC"].sum()
+pendiente_usd = df["Pendiente_USD"].sum()
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3, c4, c5, c6 = st.columns(6)
 c1.metric("Forecast", f"{forecast:,.0f} u")
 c2.metric("OC recibidas", f"{oc:,.0f} u", f"{oc/forecast:.1%} del forecast" if forecast else "—")
 c3.metric("Facturado", f"{facturado:,.0f} u", f"{facturado/forecast:.1%} del forecast" if forecast else "—")
 c4.metric("Facturado / OC", f"{facturado/oc:.1%}" if oc else "—")
+c5.metric("Pendiente de facturar", f"{pendiente_unidades:,.0f} u")
+c6.metric("Venta pendiente", f"${pendiente_usd:,.2f}")
+
+st.info(
+    "La venta pendiente se calcula por SKU como max(OC − facturado, 0) × precio promedio de OC. "
+    "Los sobrecumplimientos de otros SKU no reducen esta oportunidad pendiente."
+)
 
 left, right = st.columns((3, 2))
 with left:
@@ -78,6 +87,7 @@ with right:
 st.subheader("Detalle SKU")
 detalle = vista[[
     "Codigo", "Producto", "Forecast_Unidades", "OC_Unidades", "Facturado_Unidades",
+    "Pendiente_Unidades_OC", "Precio_OC", "Pendiente_USD",
     "OC_vs_Forecast", "Facturado_vs_Forecast", "Facturado_vs_OC", "Estado",
 ]].copy()
 st.dataframe(
@@ -88,6 +98,9 @@ st.dataframe(
         "Forecast_Unidades": st.column_config.NumberColumn("Forecast", format="%,.0f"),
         "OC_Unidades": st.column_config.NumberColumn("OC", format="%,.0f"),
         "Facturado_Unidades": st.column_config.NumberColumn("Facturado", format="%,.0f"),
+        "Pendiente_Unidades_OC": st.column_config.NumberColumn("Pendiente", format="%,.0f"),
+        "Precio_OC": st.column_config.NumberColumn("Precio OC", format="$%.2f"),
+        "Pendiente_USD": st.column_config.NumberColumn("Pendiente USD", format="$%,.2f"),
         "OC_vs_Forecast": st.column_config.ProgressColumn("OC / Forecast", min_value=0, max_value=1.5, format="%.1f"),
         "Facturado_vs_Forecast": st.column_config.ProgressColumn("Fact. / Forecast", min_value=0, max_value=1.5, format="%.1f"),
         "Facturado_vs_OC": st.column_config.NumberColumn("Fact. / OC", format="%.1f"),
