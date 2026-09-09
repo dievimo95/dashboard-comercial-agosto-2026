@@ -1,6 +1,8 @@
 from pathlib import Path
+import re
 
 import pandas as pd
+import pdfplumber
 import plotly.express as px
 import streamlit as st
 
@@ -20,7 +22,86 @@ def leer_archivo_cargado(archivo):
 
 
 def normalizar_codigo(serie):
-    return serie.astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+    return serie.astype(str).str.strip().str.replace(r"\.0$", "", regex=True).str.lstrip("0")
+
+
+def extraer_pdf_pedido(archivo):
+    """Extrae productos de los formatos de pedido usados por los principales clientes."""
+    archivo.seek(0)
+    with pdfplumber.open(archivo) as pdf:
+        texto = "\n".join((p.extract_text(x_tolerance=2, y_tolerance=3) or "") for p in pdf.pages)
+    texto = texto.replace("\xa0", " ")
+    filas = []
+    cliente, documento = "Cliente no identificado", archivo.name
+
+    def agregar(codigo, producto, unidades, doc=None, cli=None):
+        try:
+            if isinstance(unidades, (int, float)):
+                cantidad = float(unidades)
+            else:
+                valor = str(unidades).strip()
+                cantidad = float(valor.replace(".", "").replace(",", ".") if "," in valor else valor)
+        except ValueError:
+            return
+        filas.append({"Tipo": "Orden de compra", "Archivo": archivo.name, "Documento": doc or documento,
+                      "Cliente": cli or cliente, "Codigo": str(codigo), "Producto": producto.strip(), "Unidades": cantidad})
+
+    if "CORPORACION FAVORITA" in texto.upper():
+        cliente = "Corporación Favorita"
+        documento = (re.search(r"pedidoId=(\d+)", texto, re.I) or [None, archivo.name])[1]
+        # En este formato la cantidad pedida está en cajas: UC x Pedida = unidades.
+        for linea in texto.splitlines():
+            m = re.search(r"^\s*\d+[A-Z]*\.\s*(.+?)\s+\d{6}\s+\*\s+(\d{12,14})\s+(\d+)\s+[\d.,]+\s+(\d+[\d.,]*)\s*$", linea)
+            if m:
+                agregar(m.group(2), m.group(1), int(m.group(3)) * float(m.group(4).replace(",", ".")))
+
+    elif "CORPORACION EL ROSADO" in texto.upper():
+        cliente = "Corporación El Rosado"
+        doc_actual = archivo.name
+        for linea in texto.splitlines():
+            mo = re.search(r"NUMERO DE ORDEN\s+(\S+)", linea, re.I)
+            if mo:
+                doc_actual = mo.group(1)
+            m = re.match(r"^\s*\d+\s+\d{10,}\s+(.+?)\s+(\d{7,13})\s+\S+\s+\d+\s+([\d.,]+)\s+", linea)
+            if m:
+                agregar(m.group(2), m.group(1), m.group(3), doc_actual)
+
+    elif "TIENDAS INDUSTRIALES ASOCIADAS" in texto.upper():
+        cliente = "Tiendas Industriales Asociadas (Tía)"
+        documento = (re.search(r"ORDEN DE COMPRA\s*N?[º°]?\s*(\d+)", texto, re.I) or [None, archivo.name])[1]
+        equivalencias = {
+            m.group(1): m.group(2)
+            for m in re.finditer(r"(?m)^(\d{6,12})\s+.+?\s+\d{12,14}\s+(\d{7,9})\s+", texto)
+        }
+        # Tabla principal: cantidad en unidades, cajas, pallet, base, pisos, descripción, código Tía, costo y total.
+        for linea in texto.splitlines():
+            m = re.match(r"^\s*([\d.,]+)\s+[\d.,]+\s+[\d.,]+\s+[\d.,]+\s+[\d.,]+\s+(.+?)\s+(\d{6,12})\s+[\d.,]+\s+[\d.,]+\s*$", linea)
+            if m:
+                agregar(equivalencias.get(m.group(3), m.group(3)), m.group(2), m.group(1))
+
+    elif "GERARDO ORTIZ" in texto.upper() or "TIENDA CORAL" in texto.upper():
+        cliente = "Gerardo Ortiz / Coral"
+        documento = (re.search(r"Ped\.\s*Compra:\s*(\S+)", texto, re.I) or re.search(r"\bCR\d+\b", texto) or [None, archivo.name])[1]
+        lineas = texto.splitlines()
+        for i, linea in enumerate(lineas):
+            m = re.match(r"^\s*\d+\s+(?:(\d{7,9})\s+)?(.+?)\s+X\S+-UN\s+(\d+)\s+[\d.,]+\s+[\d.,]+\s*$", linea)
+            if m:
+                codigo = m.group(1)
+                if not codigo:
+                    cercanas = " ".join([linea] + lineas[i + 1:i + 3])
+                    codigo = (re.search(r"\b(\d{12,14})\b", cercanas) or [None, ""])[1]
+                agregar(codigo, m.group(2), m.group(3))
+
+    elif "PRESUPUESTO" in texto.upper():
+        cliente = (re.search(r"SOCIEDAD CIVIL Y COMERCIAL ZICO\s+(.+?)\s+Km", texto, re.I | re.S) or [None, "Cliente interno"])[1].strip()
+        documento = (re.search(r"Presupuesto\s*#\s*(\S+)", texto, re.I) or [None, archivo.name])[1]
+        for m in re.finditer(r"\[([^]]+)\]\s+(.+?)\s+([\d.,]+)\s+Unidades", texto):
+            if "TRANSPORTE" not in m.group(2).upper():
+                agregar(m.group(1), m.group(2), m.group(3))
+
+    if not filas:
+        raise ValueError("el formato PDF todavía no pudo reconocerse")
+    return pd.DataFrame(filas)
 
 
 def preparar_movimientos(archivos):
@@ -28,6 +109,9 @@ def preparar_movimientos(archivos):
     bloques, errores = [], []
     for archivo in archivos or []:
         try:
+            if archivo.name.lower().endswith(".pdf"):
+                bloques.append(extraer_pdf_pedido(archivo))
+                continue
             hojas = leer_archivo_cargado(archivo)
             for nombre_hoja, carga in hojas.items():
                 carga.columns = carga.columns.astype(str).str.strip()
@@ -101,7 +185,7 @@ with st.expander("📤 Cargar órdenes y facturas faltantes de agosto"):
     plantilla_oc = "Numero de orden,Cliente,Codigo,Producto,Cantidad solicitada\nOC-001,Cliente ejemplo,1010001,Aceite de Coco,120\n"
     plantilla_fac = "Numero de factura,Cliente,Codigo,Producto,Cantidad facturada\nFAC-001,Cliente ejemplo,1010001,Aceite de Coco,96\n"
     archivos = st.file_uploader(
-        "Arrastra órdenes y facturas aquí", type=["xlsx", "xls", "csv"], accept_multiple_files=True,
+        "Arrastra órdenes y facturas aquí", type=["pdf", "xlsx", "xls", "csv"], accept_multiple_files=True,
         help="Puedes soltar varios archivos juntos. Se reconocerán automáticamente por sus columnas.",
     )
     d1, d2 = st.columns(2)
@@ -130,6 +214,17 @@ with st.expander("📤 Cargar órdenes y facturas faltantes de agosto"):
 # Sumar las cargas válidas al consolidado base por código de producto.
 df["Codigo"] = normalizar_codigo(df["Codigo"])
 if not nuevas_oc.empty or not nuevas_fac.empty:
+    # Cuando el PDF trae código de barras en vez del código interno, encontrar el SKU correspondiente.
+    mapa_barcode = {}
+    for _, fila in df.dropna(subset=["Barcode"]).iterrows():
+        try:
+            mapa_barcode[str(int(float(fila["Barcode"])))] = fila["Codigo"]
+        except (ValueError, TypeError):
+            pass
+    for carga in [nuevas_oc, nuevas_fac]:
+        if not carga.empty:
+            carga["Codigo"] = normalizar_codigo(carga["Codigo"])
+            carga["Codigo"] = carga["Codigo"].map(lambda c: mapa_barcode.get(c, c))
     codigos_nuevos = set(pd.concat([x["Codigo"] for x in [nuevas_oc, nuevas_fac] if not x.empty])) - set(df["Codigo"])
     if codigos_nuevos:
         fuentes = pd.concat([x for x in [nuevas_oc, nuevas_fac] if not x.empty], ignore_index=True)
