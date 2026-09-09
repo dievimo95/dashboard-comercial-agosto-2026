@@ -29,13 +29,33 @@ facturado = df["Facturado_Unidades"].sum()
 pendiente_unidades = df["Pendiente_Unidades_OC"].sum()
 pendiente_usd = df["Pendiente_USD"].sum()
 
-c1, c2, c3, c4, c5, c6 = st.columns(6)
-c1.metric("Forecast", f"{forecast:,.0f} u")
-c2.metric("OC recibidas", f"{oc:,.0f} u", f"{oc/forecast:.1%} del forecast" if forecast else "—")
-c3.metric("Facturado", f"{facturado:,.0f} u", f"{facturado/forecast:.1%} del forecast" if forecast else "—")
-c4.metric("Facturado / OC", f"{facturado/oc:.1%}" if oc else "—")
-c5.metric("Pendiente de facturar", f"{pendiente_unidades:,.0f} u")
-c6.metric("Venta pendiente", f"${pendiente_usd:,.2f}")
+st.markdown(
+    """
+    <style>
+    div[data-testid="stMetric"] {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 18px 20px;
+        min-height: 132px;
+    }
+    div[data-testid="stMetricValue"] {
+        font-size: clamp(1.9rem, 3vw, 2.65rem);
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+r1c1, r1c2, r1c3 = st.columns(3)
+r1c1.metric("Forecast", f"{forecast:,.0f} unidades")
+r1c2.metric("Órdenes de compra recibidas", f"{oc:,.0f} unidades", f"{oc/forecast:.1%} del forecast" if forecast else "—")
+r1c3.metric("Facturado", f"{facturado:,.0f} unidades", f"{facturado/forecast:.1%} del forecast" if forecast else "—")
+
+r2c1, r2c2, r2c3 = st.columns(3)
+r2c1.metric("Cumplimiento de OC", f"{facturado/oc:.1%}" if oc else "—")
+r2c2.metric("Pendiente de facturar", f"{pendiente_unidades:,.0f} unidades")
+r2c3.metric("Venta pendiente", f"USD {pendiente_usd:,.2f}")
 
 st.info(
     "La venta pendiente se calcula por SKU como max(OC − facturado, 0) × precio promedio de OC. "
