@@ -58,13 +58,17 @@ def extraer_pdf_pedido(archivo):
     elif "CORPORACION EL ROSADO" in texto.upper():
         cliente = "Corporación El Rosado"
         doc_actual = archivo.name
-        for linea in texto.splitlines():
+        lineas = texto.splitlines()
+        for i, linea in enumerate(lineas):
             mo = re.search(r"NUMERO DE ORDEN\s+(\S+)", linea, re.I)
             if mo:
                 doc_actual = mo.group(1)
             m = re.match(r"^\s*\d+\s+\d{10,}\s+(.+?)\s+(\d{7,13})\s+\S+\s+\d+\s+([\d.,]+)\s+", linea)
             if m:
-                agregar(m.group(2), m.group(1), m.group(3), doc_actual)
+                codigo = m.group(2)
+                if len(codigo) == 10 and i + 1 < len(lineas) and re.fullmatch(r"\d{3}", lineas[i + 1].strip()):
+                    codigo += lineas[i + 1].strip()
+                agregar(codigo, m.group(1), m.group(3), doc_actual)
 
     elif "TIENDAS INDUSTRIALES ASOCIADAS" in texto.upper():
         cliente = "Tiendas Industriales Asociadas (Tía)"
