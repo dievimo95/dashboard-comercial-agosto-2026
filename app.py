@@ -179,11 +179,43 @@ with left:
 
 with right:
     st.subheader("Estado de los productos")
-    st.caption("Aquí puedes ver rápidamente cuáles van bien y cuáles necesitan atención.")
+    st.caption("Aquí puedes ver rápidamente cuáles van bien y cuáles necesitan atención. Abre cada estado para entender qué pasa.")
     conteo = vista["Estado"].fillna("Sin estado").value_counts().rename_axis("Estado").reset_index(name="SKUs")
     fig2 = px.pie(conteo, names="Estado", values="SKUs", hole=.55)
     fig2.update_layout(height=350, legend_title_text="")
     st.plotly_chart(fig2, use_container_width=True)
+
+    explicaciones = {
+        "Crítico": "Se facturó menos de la mitad de la meta. Estos productos necesitan atención inmediata.",
+        "Bajo": "Se avanzó, pero todavía falta una parte importante para llegar a la meta.",
+        "En meta": "El producto está cerca de la meta esperada. Va por buen camino.",
+        "Sobre forecast": "Se facturó más de lo que se había planificado. Es un resultado positivo.",
+        "Sin forecast": "Hubo pedidos o ventas, pero no se había definido una meta para este producto.",
+    }
+    iconos = {"Crítico": "🔴", "Bajo": "🟠", "En meta": "🟢", "Sobre forecast": "🔵", "Sin forecast": "⚪"}
+    for estado in ["Crítico", "Bajo", "En meta", "Sobre forecast", "Sin forecast"]:
+        productos_estado = vista[vista["Estado"] == estado].copy()
+        if productos_estado.empty:
+            continue
+        with st.expander(f"{iconos[estado]} {estado} · {len(productos_estado)} productos"):
+            st.write(explicaciones[estado])
+            productos_estado = productos_estado.sort_values("Pendiente_Unidades_OC", ascending=False)
+            productos_estado["Porcentaje_pedido"] = productos_estado["Facturado_vs_OC"] * 100
+            st.dataframe(
+                productos_estado,
+                hide_index=True,
+                use_container_width=True,
+                column_order=["Producto", "Forecast_Unidades", "OC_Unidades", "Facturado_Unidades",
+                              "Pendiente_Unidades_OC", "Porcentaje_pedido"],
+                column_config={
+                    "Producto": st.column_config.TextColumn("Producto", width="large"),
+                    "Forecast_Unidades": st.column_config.NumberColumn("Meta", format="%,.0f"),
+                    "OC_Unidades": st.column_config.NumberColumn("Pedidos", format="%,.0f"),
+                    "Facturado_Unidades": st.column_config.NumberColumn("Ya facturado", format="%,.0f"),
+                    "Pendiente_Unidades_OC": st.column_config.NumberColumn("Falta facturar", format="%,.0f"),
+                    "Porcentaje_pedido": st.column_config.NumberColumn("% del pedido facturado", format="%.0f%%"),
+                },
+            )
 
     st.subheader("Productos con más unidades pendientes")
     brechas = vista.nlargest(10, "Brecha_Forecast_Facturado")[["Producto", "Brecha_Forecast_Facturado", "Estado"]]
