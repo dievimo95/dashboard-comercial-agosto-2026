@@ -82,6 +82,12 @@ if st.session_state.get("mostrar_ordenes", False):
         Pendiente_estimado_unidades=("Pendiente_estimado_unidades", "sum"),
         Pendiente_estimado_USD=("Pendiente_estimado_USD", "sum"),
     ).sort_values("Pendiente_estimado_USD", ascending=False)
+    producto_principal = (
+        orders.sort_values("Pendiente_estimado_USD", ascending=False)
+        .drop_duplicates(["Cliente", "Orden"])[["Cliente", "Orden", "Producto"]]
+        .rename(columns={"Producto": "Producto_principal"})
+    )
+    resumen_oc = resumen_oc.merge(producto_principal, on=["Cliente", "Orden"], how="left")
 
     clientes_oc = ["Todos"] + sorted(resumen_oc["Cliente"].dropna().unique().tolist())
     cliente_oc = st.selectbox("Filtrar cliente", clientes_oc, key="cliente_oc")
@@ -95,7 +101,8 @@ if st.session_state.get("mostrar_ordenes", False):
         column_config={
             "Cliente": "Cliente",
             "Orden": "Número de orden",
-            "Productos": st.column_config.NumberColumn("Productos", format="%d"),
+            "Producto_principal": st.column_config.TextColumn("Producto principal pendiente", width="large"),
+            "Productos": st.column_config.NumberColumn("Productos en la orden", format="%d"),
             "Unidades_OC": st.column_config.NumberColumn("Unidades en OC", format="%,.0f"),
             "Pendiente_estimado_unidades": st.column_config.NumberColumn("Pendiente estimado", format="%,.0f"),
             "Pendiente_estimado_USD": st.column_config.NumberColumn("Venta pendiente estimada", format="$%,.2f"),
