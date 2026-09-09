@@ -75,6 +75,67 @@ with st.expander("¿Cómo se calcula el dinero pendiente?"):
         "multiplicamos por su precio promedio en las órdenes de compra."
     )
 
+st.subheader("🎯 Exactitud del forecast")
+st.caption(
+    "Mide qué tan cerca estuvieron los pedidos reales de lo que habíamos pronosticado. "
+    "100% significa que acertamos exactamente."
+)
+with st.expander("Ver la fórmula"):
+    st.latex(r"\mathrm{Exactitud}=\left(1-\frac{|\mathrm{Pedido\ real}-\mathrm{Forecast}|}{\mathrm{Forecast}}\right)\times100")
+    st.caption("Si el error supera el forecast, la exactitud se muestra como 0% y no como un número negativo.")
+con_meta = df[df["Forecast_Unidades"] > 0].copy()
+con_meta["Diferencia_Unidades"] = con_meta["OC_Unidades"] - con_meta["Forecast_Unidades"]
+con_meta["Error_Absoluto"] = con_meta["Diferencia_Unidades"].abs()
+con_meta["Exactitud_Porcentaje"] = (
+    1 - con_meta["Error_Absoluto"] / con_meta["Forecast_Unidades"]
+).clip(lower=0, upper=1) * 100
+con_meta["Qué_pasó"] = "Pedido igual al forecast"
+con_meta.loc[con_meta["Diferencia_Unidades"] < 0, "Qué_pasó"] = "Pidieron menos de lo esperado"
+con_meta.loc[con_meta["Diferencia_Unidades"] > 0, "Qué_pasó"] = "Pidieron más de lo esperado"
+
+exactitud_total = max(0, 1 - abs(oc - forecast) / forecast) * 100 if forecast else 0
+error_total_items = con_meta["Error_Absoluto"].sum()
+exactitud_items = max(0, 1 - error_total_items / con_meta["Forecast_Unidades"].sum()) * 100
+diferencia_total = oc - forecast
+
+e1, e2, e3, e4 = st.columns(4)
+e1.metric("Exactitud del total", f"{exactitud_total:.1f}%", help="Compara el total pedido con el total pronosticado.")
+e2.metric("Exactitud producto por producto", f"{exactitud_items:.1f}%", help="Evita que el exceso de un producto oculte la falta de otro.")
+e3.metric("Diferencia total", f"{diferencia_total:,.0f} unidades")
+e4.metric("Productos sin forecast", f"{(df['Forecast_Unidades'] <= 0).sum():,}")
+
+st.warning(
+    f"**Lectura gerencial:** el total parece muy cercano al forecast ({exactitud_total:.1f}%), "
+    f"pero al revisar producto por producto la exactitud baja a {exactitud_items:.1f}%. "
+    "Esto ocurre porque algunos productos tuvieron pedidos de más y compensaron a otros con pedidos de menos."
+)
+
+with st.expander("Ver la exactitud producto por producto"):
+    tipo_error = st.multiselect(
+        "Mostrar productos donde:",
+        ["Pidieron menos de lo esperado", "Pidieron más de lo esperado", "Pedido igual al forecast"],
+        default=["Pidieron menos de lo esperado", "Pidieron más de lo esperado", "Pedido igual al forecast"],
+    )
+    detalle_exactitud = con_meta[con_meta["Qué_pasó"].isin(tipo_error)].sort_values(
+        ["Exactitud_Porcentaje", "Error_Absoluto"], ascending=[True, False]
+    )
+    st.dataframe(
+        detalle_exactitud,
+        hide_index=True,
+        use_container_width=True,
+        column_order=["Producto", "Forecast_Unidades", "OC_Unidades", "Diferencia_Unidades",
+                      "Exactitud_Porcentaje", "Qué_pasó"],
+        column_config={
+            "Producto": st.column_config.TextColumn("Producto", width="large"),
+            "Forecast_Unidades": st.column_config.NumberColumn("Forecast", format="%,.0f"),
+            "OC_Unidades": st.column_config.NumberColumn("Pedido real", format="%,.0f"),
+            "Diferencia_Unidades": st.column_config.NumberColumn("Diferencia", format="%,.0f"),
+            "Exactitud_Porcentaje": st.column_config.ProgressColumn("Exactitud", min_value=0, max_value=100, format="%.1f%%"),
+            "Qué_pasó": "¿Qué pasó?",
+        },
+    )
+    st.caption("Los productos sin forecast se muestran aparte porque no se puede calcular exactitud sin una meta inicial.")
+
 if st.session_state.get("mostrar_ordenes", False):
     st.subheader("Pedidos que todavía no se facturaron por completo")
     st.caption(
