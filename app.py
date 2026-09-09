@@ -15,49 +15,60 @@ df = pd.read_csv(DATA, encoding="utf-8-sig")
 def leer_archivo_cargado(archivo):
     """Lee una hoja sencilla de Excel o CSV cargada por el usuario."""
     if archivo.name.lower().endswith(".csv"):
-        return pd.read_csv(archivo, encoding="utf-8-sig")
-    return pd.read_excel(archivo)
+        return {"Datos": pd.read_csv(archivo, encoding="utf-8-sig")}
+    return pd.read_excel(archivo, sheet_name=None)
 
 
 def normalizar_codigo(serie):
     return serie.astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
 
 
-def preparar_movimientos(archivos, tipo):
-    """Valida y une órdenes o facturas sin alterar el archivo original."""
+def preparar_movimientos(archivos):
+    """Reconoce automáticamente órdenes y facturas por sus encabezados."""
     bloques, errores = [], []
     for archivo in archivos or []:
         try:
-            carga = leer_archivo_cargado(archivo)
-            carga.columns = carga.columns.astype(str).str.strip()
-            alias = {
-                "Código": "Codigo", "Código producto": "Codigo", "Codigo producto": "Codigo",
-                "SKU": "Codigo", "Referencia": "Codigo",
-                "Cantidad": "Unidades", "Cantidad solicitada": "Unidades",
-                "Unidades solicitadas": "Unidades", "Unidades pedidas": "Unidades",
-                "Cantidad facturada": "Unidades", "Unidades facturadas": "Unidades",
-                "Número de orden": "Documento", "Numero de orden": "Documento",
-                "Orden": "Documento", "OC": "Documento",
-                "Número de factura": "Documento", "Numero de factura": "Documento",
-                "Factura": "Documento", "Descripción": "Producto", "Descripcion": "Producto",
-            }
-            carga = carga.rename(columns={c: alias.get(c, c) for c in carga.columns})
-            faltantes = [c for c in ["Codigo", "Unidades"] if c not in carga.columns]
-            if faltantes:
-                errores.append(f"{archivo.name}: falta {' y '.join(faltantes)}")
-                continue
-            carga["Codigo"] = normalizar_codigo(carga["Codigo"])
-            carga["Unidades"] = pd.to_numeric(carga["Unidades"], errors="coerce")
-            carga = carga[carga["Codigo"].ne("") & carga["Unidades"].notna() & (carga["Unidades"] >= 0)].copy()
-            if "Producto" not in carga:
-                carga["Producto"] = ""
-            if "Documento" not in carga:
-                carga["Documento"] = archivo.name
-            if "Cliente" not in carga:
-                carga["Cliente"] = "No indicado"
-            carga["Archivo"] = archivo.name
-            carga["Tipo"] = tipo
-            bloques.append(carga[["Tipo", "Archivo", "Documento", "Cliente", "Codigo", "Producto", "Unidades"]])
+            hojas = leer_archivo_cargado(archivo)
+            for nombre_hoja, carga in hojas.items():
+                carga.columns = carga.columns.astype(str).str.strip()
+                encabezados = " ".join(carga.columns).lower()
+                nombre_pista = f"{archivo.name} {nombre_hoja}".lower()
+                es_factura = any(x in encabezados for x in ["factura", "facturada", "facturado"])
+                es_orden = any(x in encabezados for x in ["orden", "solicitada", "solicitado", "pedida", "pedido", " oc "])
+                if not es_factura and not es_orden:
+                    es_factura = "fact" in nombre_pista
+                    es_orden = any(x in nombre_pista for x in ["orden", "pedido", "oc"])
+                if es_factura == es_orden:
+                    errores.append(f"{archivo.name} · hoja {nombre_hoja}: no se pudo distinguir si es orden o factura")
+                    continue
+                tipo = "Factura" if es_factura else "Orden de compra"
+                alias = {
+                    "Código": "Codigo", "Código producto": "Codigo", "Codigo producto": "Codigo",
+                    "SKU": "Codigo", "Referencia": "Codigo", "Cantidad": "Unidades",
+                    "Cantidad solicitada": "Unidades", "Unidades solicitadas": "Unidades",
+                    "Unidades pedidas": "Unidades", "Cantidad facturada": "Unidades",
+                    "Unidades facturadas": "Unidades", "Número de orden": "Documento",
+                    "Numero de orden": "Documento", "Orden": "Documento", "OC": "Documento",
+                    "Número de factura": "Documento", "Numero de factura": "Documento",
+                    "Factura": "Documento", "Descripción": "Producto", "Descripcion": "Producto",
+                }
+                carga = carga.rename(columns={c: alias.get(c, c) for c in carga.columns})
+                faltantes = [c for c in ["Codigo", "Unidades"] if c not in carga.columns]
+                if faltantes:
+                    errores.append(f"{archivo.name} · hoja {nombre_hoja}: falta {' y '.join(faltantes)}")
+                    continue
+                carga["Codigo"] = normalizar_codigo(carga["Codigo"])
+                carga["Unidades"] = pd.to_numeric(carga["Unidades"], errors="coerce")
+                carga = carga[carga["Codigo"].ne("") & carga["Unidades"].notna() & (carga["Unidades"] >= 0)].copy()
+                if "Producto" not in carga:
+                    carga["Producto"] = ""
+                if "Documento" not in carga:
+                    carga["Documento"] = archivo.name
+                if "Cliente" not in carga:
+                    carga["Cliente"] = "No indicado"
+                carga["Archivo"] = archivo.name
+                carga["Tipo"] = tipo
+                bloques.append(carga[["Tipo", "Archivo", "Documento", "Cliente", "Codigo", "Producto", "Unidades"]])
         except Exception as exc:
             errores.append(f"{archivo.name}: no se pudo leer ({exc})")
     return (pd.concat(bloques, ignore_index=True) if bloques else pd.DataFrame()), errores
@@ -84,32 +95,24 @@ st.caption("Una vista sencilla: meta de venta → pedidos recibidos → ventas f
 
 with st.expander("📤 Cargar órdenes y facturas faltantes de agosto"):
     st.write(
-        "Sube los documentos que faltan y sus cantidades se sumarán al análisis de esta pantalla. "
-        "Cada fila debe representar un producto."
+        "Arrastra aquí tus archivos. El dashboard reconocerá automáticamente cuáles son órdenes y cuáles son facturas, "
+        "y sumará sus cantidades al análisis."
     )
     plantilla_oc = "Numero de orden,Cliente,Codigo,Producto,Cantidad solicitada\nOC-001,Cliente ejemplo,1010001,Aceite de Coco,120\n"
     plantilla_fac = "Numero de factura,Cliente,Codigo,Producto,Cantidad facturada\nFAC-001,Cliente ejemplo,1010001,Aceite de Coco,96\n"
-    p1, p2 = st.columns(2)
-    with p1:
-        st.download_button("Descargar modelo para órdenes", plantilla_oc, "modelo_ordenes_agosto.csv", "text/csv")
-        archivos_oc = st.file_uploader(
-            "Órdenes de compra faltantes", type=["xlsx", "xls", "csv"],
-            accept_multiple_files=True, help="Columnas obligatorias: Codigo y Cantidad solicitada.",
-        )
-    with p2:
-        st.download_button("Descargar modelo para facturas", plantilla_fac, "modelo_facturas_agosto.csv", "text/csv")
-        archivos_fac = st.file_uploader(
-            "Facturas faltantes", type=["xlsx", "xls", "csv"],
-            accept_multiple_files=True, help="Columnas obligatorias: Codigo y Cantidad facturada.",
-        )
+    archivos = st.file_uploader(
+        "Arrastra órdenes y facturas aquí", type=["xlsx", "xls", "csv"], accept_multiple_files=True,
+        help="Puedes soltar varios archivos juntos. Se reconocerán automáticamente por sus columnas.",
+    )
+    d1, d2 = st.columns(2)
+    d1.download_button("Descargar modelo de órdenes", plantilla_oc, "modelo_ordenes_agosto.csv", "text/csv", use_container_width=True)
+    d2.download_button("Descargar modelo de facturas", plantilla_fac, "modelo_facturas_agosto.csv", "text/csv", use_container_width=True)
 
-    nuevas_oc, errores_oc = preparar_movimientos(archivos_oc, "Orden de compra")
-    nuevas_fac, errores_fac = preparar_movimientos(archivos_fac, "Factura")
-    for error in errores_oc + errores_fac:
+    movimientos, errores = preparar_movimientos(archivos)
+    nuevas_oc = movimientos[movimientos["Tipo"] == "Orden de compra"].copy() if not movimientos.empty else pd.DataFrame()
+    nuevas_fac = movimientos[movimientos["Tipo"] == "Factura"].copy() if not movimientos.empty else pd.DataFrame()
+    for error in errores:
         st.error(error)
-
-    movimientos = pd.concat([x for x in [nuevas_oc, nuevas_fac] if not x.empty], ignore_index=True) \
-        if not nuevas_oc.empty or not nuevas_fac.empty else pd.DataFrame()
     if not movimientos.empty:
         m1, m2, m3 = st.columns(3)
         m1.metric("Archivos aceptados", len(set(movimientos["Archivo"])))
