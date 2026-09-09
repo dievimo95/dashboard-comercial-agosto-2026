@@ -40,7 +40,7 @@ st.markdown(
         min-height: 132px;
     }
     div[data-testid="stMetricValue"] {
-        font-size: clamp(1.9rem, 3vw, 2.65rem);
+        font-size: clamp(1.65rem, 2.6vw, 2.35rem);
     }
     </style>
     """,
@@ -48,14 +48,14 @@ st.markdown(
 )
 
 r1c1, r1c2, r1c3 = st.columns(3)
-r1c1.metric("Forecast", f"{forecast:,.0f} unidades")
-r1c2.metric("Órdenes de compra recibidas", f"{oc:,.0f} unidades", f"{oc/forecast:.1%} del forecast" if forecast else "—")
-r1c3.metric("Facturado", f"{facturado:,.0f} unidades", f"{facturado/forecast:.1%} del forecast" if forecast else "—")
+r1c1.metric("Forecast (unidades)", f"{forecast:,.0f}")
+r1c2.metric("OC recibidas (unidades)", f"{oc:,.0f}", f"{oc/forecast:.1%} del forecast" if forecast else "—")
+r1c3.metric("Facturado (unidades)", f"{facturado:,.0f}", f"{facturado/forecast:.1%} del forecast" if forecast else "—")
 
 r2c1, r2c2, r2c3 = st.columns(3)
 r2c1.metric("Cumplimiento de OC", f"{facturado/oc:.1%}" if oc else "—")
-r2c2.metric("Pendiente de facturar", f"{pendiente_unidades:,.0f} unidades")
-r2c3.metric("Venta pendiente", f"USD {pendiente_usd:,.2f}")
+r2c2.metric("Pendiente (unidades)", f"{pendiente_unidades:,.0f}")
+r2c3.metric("Venta pendiente (USD)", f"${pendiente_usd:,.0f}")
 
 st.info(
     "La venta pendiente se calcula por SKU como max(OC − facturado, 0) × precio promedio de OC. "
