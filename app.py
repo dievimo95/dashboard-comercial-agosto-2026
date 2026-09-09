@@ -94,31 +94,21 @@ if st.session_state.get("mostrar_ordenes", False):
     if cliente_oc != "Todos":
         resumen_oc = resumen_oc[resumen_oc["Cliente"] == cliente_oc]
 
-    resumen_oc["Clave_OC"] = resumen_oc["Cliente"].astype(str) + " | " + resumen_oc["Orden"].astype(str)
-    opciones_oc = resumen_oc["Clave_OC"].tolist()
-    seleccion_oc = st.multiselect(
-        "Órdenes incluidas en la suma",
-        opciones_oc,
-        default=opciones_oc,
-        key=f"ordenes_incluidas_{cliente_oc}",
-        help="Desmarca una orden para excluirla de los totales y de la tabla.",
-    )
-    resumen_oc = resumen_oc[resumen_oc["Clave_OC"].isin(seleccion_oc)].drop(columns="Clave_OC")
-    ordenes_elegidas = set(resumen_oc["Orden"].astype(str))
-    orders_filtradas = orders[orders["Orden"].astype(str).isin(ordenes_elegidas)]
-
-    suma1, suma2, suma3 = st.columns(3)
-    suma1.metric("Órdenes seleccionadas", f"{len(resumen_oc):,}")
-    suma2.metric("Unidades seleccionadas", f"{resumen_oc['Pendiente_estimado_unidades'].sum():,.0f}")
-    suma3.metric("Venta seleccionada", f"${resumen_oc['Pendiente_estimado_USD'].sum():,.2f}")
-
-    st.dataframe(
-        resumen_oc,
+    st.caption("Marca o desmarca la casilla **Sumar** de cada orden para incluirla en los totales.")
+    totales_seleccion = st.empty()
+    resumen_editable = resumen_oc.copy()
+    resumen_editable.insert(0, "Sumar", True)
+    tabla_oc = st.data_editor(
+        resumen_editable,
         hide_index=True,
         use_container_width=True,
-        column_order=["Cliente", "Orden", "Producto_principal", "Productos",
+        column_order=["Sumar", "Cliente", "Orden", "Producto_principal", "Productos",
                       "Pendiente_estimado_unidades", "Pendiente_estimado_USD"],
+        disabled=["Cliente", "Orden", "Producto_principal", "Productos",
+                  "Pendiente_estimado_unidades", "Pendiente_estimado_USD"],
+        key=f"tabla_ordenes_{cliente_oc}",
         column_config={
+            "Sumar": st.column_config.CheckboxColumn("Sumar", default=True, width="small"),
             "Cliente": "Cliente",
             "Orden": "Número de orden",
             "Producto_principal": st.column_config.TextColumn("Producto principal pendiente", width="large"),
@@ -128,6 +118,15 @@ if st.session_state.get("mostrar_ordenes", False):
             "Pendiente_estimado_USD": st.column_config.NumberColumn("Venta pendiente estimada", format="$%,.2f"),
         },
     )
+    resumen_oc = tabla_oc[tabla_oc["Sumar"]].drop(columns="Sumar")
+    ordenes_elegidas = set(resumen_oc["Orden"].astype(str))
+    orders_filtradas = orders[orders["Orden"].astype(str).isin(ordenes_elegidas)]
+
+    with totales_seleccion.container():
+        suma1, suma2, suma3 = st.columns(3)
+        suma1.metric("Órdenes seleccionadas", f"{len(resumen_oc):,}")
+        suma2.metric("Unidades seleccionadas", f"{resumen_oc['Pendiente_estimado_unidades'].sum():,.0f}")
+        suma3.metric("Venta seleccionada", f"${resumen_oc['Pendiente_estimado_USD'].sum():,.2f}")
 
     with st.expander("Ver productos dentro de las órdenes"):
         st.dataframe(
